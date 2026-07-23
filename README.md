@@ -76,6 +76,17 @@ cp .env.example .env
 
 Nach dem Ausfüllen Claude Code neu starten (Server liest die `.env` beim Start).
 
+### `.env` außerhalb des Repos ablegen (empfohlen für Secrets)
+Der Ort der `.env` ist frei wählbar — Priorität:
+1. Start-Argument `--env`, z. B. in der MCP-Registrierung:
+   ```bash
+   claude mcp add trends-local --scope user -- "<pfad>\.venv\Scripts\python.exe" "<pfad>\server.py" --env "C:\Users\david\secrets\trends.env"
+   ```
+2. Umgebungsvariable `TRENDS_MCP_ENV=C:\Users\david\secrets\trends.env` (Datei **oder** Ordner)
+3. Fallback: `.env` im Projektordner
+
+So liegen die Keys nie im Git-Repo.
+
 ### Neu einrichten auf einem anderen Rechner
 ```bash
 python -m venv .venv

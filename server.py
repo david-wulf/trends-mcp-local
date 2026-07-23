@@ -1,7 +1,11 @@
 """Lokaler Trends-MCP-Server: Google Trends + YouTube Data API + Reddit.
 
-Start (stdio):  python server.py
-Konfiguration:  .env im Projektordner (siehe .env.example)
+Start (stdio):  python server.py [--env PFAD]
+Konfiguration:  .env; Ort waehlbar via
+                1) CLI-Argument   --env <datei-oder-ordner>
+                2) Umgebungsvar   TRENDS_MCP_ENV=<datei-oder-ordner>
+                3) Fallback       .env im Projektordner
+Damit koennen die Secrets ausserhalb des Repos liegen (z. B. in OneDrive/Config).
 """
 from __future__ import annotations
 
@@ -10,9 +14,33 @@ import sys
 
 from dotenv import load_dotenv
 
-# .env aus dem Projektordner laden (unabhaengig vom Arbeitsverzeichnis)
 _HERE = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(_HERE, ".env"))
+
+
+def _load_env() -> str | None:
+    """Laedt die .env vom ersten gefundenen Ort (CLI > ENV-Var > Projektordner)."""
+    override = None
+    if "--env" in sys.argv:
+        i = sys.argv.index("--env")
+        if i + 1 < len(sys.argv):
+            override = sys.argv[i + 1]
+    override = override or os.environ.get("TRENDS_MCP_ENV")
+
+    candidates: list[str] = []
+    if override:
+        # Ordner -> darin nach .env suchen; sonst direkter Dateipfad
+        candidates.append(os.path.join(override, ".env") if os.path.isdir(override) else override)
+    candidates.append(os.path.join(_HERE, ".env"))
+
+    for path in candidates:
+        if path and os.path.isfile(path):
+            load_dotenv(path)
+            return path
+    load_dotenv()  # ambient (bereits gesetzte Prozess-Variablen respektieren)
+    return None
+
+
+_load_env()
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 

@@ -6,12 +6,18 @@ Der API-Key wird aus der Umgebungsvariable YOUTUBE_API_KEY gelesen.
 """
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
 _service = None
+
+
+class YouTubeApiError(RuntimeError):
+    """Klar lesbarer Fehler statt eines rohen googleapiclient-Tracebacks."""
 
 
 def _svc():
@@ -25,6 +31,40 @@ def _svc():
             )
         _service = build("youtube", "v3", developerKey=key, cache_discovery=False)
     return _service
+
+
+def _execute(request) -> dict:
+    """Fuehrt einen API-Request aus und uebersetzt HttpError in klare Meldungen."""
+    try:
+        return request.execute()
+    except HttpError as e:
+        status = getattr(getattr(e, "resp", None), "status", None)
+        reason, detail = None, None
+        try:
+            body = json.loads(e.content.decode("utf-8"))
+            err = body.get("error", {})
+            detail = err.get("message")
+            errs = err.get("errors") or []
+            reason = errs[0].get("reason") if errs else None
+        except Exception:
+            pass
+        if reason in ("quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded"):
+            raise YouTubeApiError(
+                "YouTube-API-Kontingent erschoepft (10.000 Einheiten/Tag; search.list "
+                "kostet 100). Morgen erneut versuchen oder Kontingent erhoehen."
+            ) from e
+        if reason in ("keyInvalid", "badRequest") or status == 400:
+            raise YouTubeApiError(
+                f"YouTube-API lehnt die Anfrage ab (Grund: {reason or 'badRequest'}). "
+                "Pruefe YOUTUBE_API_KEY und ob 'YouTube Data API v3' im Projekt aktiv ist. "
+                f"Details: {detail}"
+            ) from e
+        if reason in ("accessNotConfigured", "forbidden") or status == 403:
+            raise YouTubeApiError(
+                "YouTube Data API v3 ist fuer diesen Key/dieses Projekt nicht freigeschaltet "
+                f"(Grund: {reason}). In der Google Cloud Console aktivieren. Details: {detail}"
+            ) from e
+        raise YouTubeApiError(f"YouTube-API-Fehler (HTTP {status}, {reason}): {detail}") from e
 
 
 def _thumb(sn: dict) -> str | None:
@@ -59,7 +99,7 @@ def search(
     }
     if published_after:
         params["publishedAfter"] = published_after
-    resp = _svc().search().list(**params).execute()
+    resp = _execute(_svc().search().list(**params))
 
     ids = [it["id"]["videoId"] for it in resp.get("items", []) if it.get("id", {}).get("videoId")]
     stats = _stats_map(ids) if ids else {}
@@ -97,7 +137,7 @@ def trending(region: str = "DE", category_id: str | None = None, max_results: in
     }
     if category_id:
         params["videoCategoryId"] = str(category_id)
-    resp = _svc().videos().list(**params).execute()
+    resp = _execute(_svc().videos().list(**params))
     videos = []
     for it in resp.get("items", []):
         sn = it.get("snippet", {})
@@ -119,44 +159,54 @@ def trending(region: str = "DE", category_id: str | None = None, max_results: in
     return {"region": region, "category_id": category_id, "count": len(videos), "videos": videos}
 
 
+def _chunks(seq: list[str], size: int = 50):
+    for i in range(0, len(seq), size):
+        yield seq[i : i + size]
+
+
 def _stats_map(video_ids: list[str]) -> dict[str, dict[str, Any]]:
-    resp = _svc().videos().list(part="statistics", id=",".join(video_ids[:50])).execute()
     out: dict[str, dict[str, Any]] = {}
-    for it in resp.get("items", []):
-        st = it.get("statistics", {})
-        out[it["id"]] = {
-            "views": int(st["viewCount"]) if "viewCount" in st else None,
-            "likes": int(st["likeCount"]) if "likeCount" in st else None,
-            "comments": int(st["commentCount"]) if "commentCount" in st else None,
-        }
+    for chunk in _chunks(video_ids, 50):
+        resp = _execute(_svc().videos().list(part="statistics", id=",".join(chunk)))
+        for it in resp.get("items", []):
+            st = it.get("statistics", {})
+            out[it["id"]] = {
+                "views": int(st["viewCount"]) if "viewCount" in st else None,
+                "likes": int(st["likeCount"]) if "likeCount" in st else None,
+                "comments": int(st["commentCount"]) if "commentCount" in st else None,
+            }
     return out
 
 
 def video_stats(video_ids: list[str]) -> dict[str, Any]:
-    """Statistiken zu konkreten Video-IDs (videos.list, 1 Quota-Einheit)."""
-    resp = _svc().videos().list(part="snippet,statistics", id=",".join(video_ids[:50])).execute()
+    """Statistiken zu konkreten Video-IDs (videos.list, 1 Quota-Einheit/50 IDs).
+
+    Beliebig viele IDs moeglich - wird automatisch in 50er-Batches abgefragt.
+    """
     videos = []
-    for it in resp.get("items", []):
-        sn = it.get("snippet", {})
-        st = it.get("statistics", {})
-        videos.append(
-            {
-                "video_id": it.get("id"),
-                "title": sn.get("title"),
-                "channel": sn.get("channelTitle"),
-                "published_at": sn.get("publishedAt"),
-                "views": int(st["viewCount"]) if "viewCount" in st else None,
-                "likes": int(st["likeCount"]) if "likeCount" in st else None,
-                "comments": int(st["commentCount"]) if "commentCount" in st else None,
-                "url": f"https://www.youtube.com/watch?v={it.get('id')}",
-            }
-        )
+    for chunk in _chunks(video_ids, 50):
+        resp = _execute(_svc().videos().list(part="snippet,statistics", id=",".join(chunk)))
+        for it in resp.get("items", []):
+            sn = it.get("snippet", {})
+            st = it.get("statistics", {})
+            videos.append(
+                {
+                    "video_id": it.get("id"),
+                    "title": sn.get("title"),
+                    "channel": sn.get("channelTitle"),
+                    "published_at": sn.get("publishedAt"),
+                    "views": int(st["viewCount"]) if "viewCount" in st else None,
+                    "likes": int(st["likeCount"]) if "likeCount" in st else None,
+                    "comments": int(st["commentCount"]) if "commentCount" in st else None,
+                    "url": f"https://www.youtube.com/watch?v={it.get('id')}",
+                }
+            )
     return {"count": len(videos), "videos": videos}
 
 
 def categories(region: str = "DE") -> dict[str, Any]:
     """YouTube-Videokategorien fuer eine Region (videoCategories.list)."""
-    resp = _svc().videoCategories().list(part="snippet", regionCode=region).execute()
+    resp = _execute(_svc().videoCategories().list(part="snippet", regionCode=region))
     cats = [
         {"id": it["id"], "name": it["snippet"]["title"]}
         for it in resp.get("items", [])
