@@ -1,0 +1,5 @@
+mcp[cli]>=1.28
+trendspy>=0.1.6
+google-api-python-client>=2.190
+praw>=8.0
+python-dotenv>=1.0
