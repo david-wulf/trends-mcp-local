@@ -73,40 +73,78 @@ def gt_topic_across_properties(
     timeframe: str = "today 12-m",
     category: int = 0,
     properties: list[str] | None = None,
+    include_series: bool = True,
 ) -> dict:
     """SUCHE 1: Interesse eines Themas ueber die verschiedenen Google-Suchen hinweg.
 
-    Misst das Thema (mid aus gt_resolve_topic oder Keyword) parallel in
-    Web-, YouTube-, News-, Bilder- und Shopping-Suche. Liefert je Property die
-    0-100-Zeitreihe plus Ausreisser-/Spike-Analyse (Peak, aktueller Wert,
-    Ausreisser mit Z-Wert).
+    Misst das Thema (mid aus gt_resolve_topic oder Keyword) in mehreren
+    Google-Properties. Liefert je Property die 0-100-Zeitreihe plus
+    Ausreisser-/Spike-Analyse (Peak, aktueller Wert, Ausreisser mit Z-Wert).
 
-    properties: Teilmenge von ['web','youtube','news','images','shopping'];
-    None = alle. timeframe z. B. 'today 12-m', 'today 5-y', 'now 7-d'.
+    properties: None = ['web','news'] (Discover-relevant, schnell); volle
+    Liste: ['web','youtube','news','images','shopping']. include_series=False
+    liefert nur die kompakte Analyse (fuer Massen-Screenings). timeframe z. B.
+    'today 12-m', 'today 5-y', 'now 7-d' (stuendlich, mit Uhrzeit).
     """
     return gtrends.topic_across_properties(
-        topic, geo=geo, timeframe=timeframe, category=category, properties=properties
+        topic, geo=geo, timeframe=timeframe, category=category,
+        properties=properties, include_series=include_series,
+    )
+
+
+@mcp.tool()
+def gt_compare(
+    keywords: list[str],
+    geo: str = "DE",
+    timeframe: str = "today 3-m",
+    category: int = 0,
+    gprop: str = "web",
+    include_series: bool = True,
+) -> dict:
+    """Bis zu 5 Keywords/Themen-mids in EINEM Request direkt vergleichen.
+
+    Die 0-100-Skala ist ueber alle Keywords gemeinsam normiert - ideal, um
+    Themen-Kandidaten fuer Discover-Artikel zu priorisieren ('welches Thema
+    zieht gerade am staerksten?'). Liefert je Keyword Zeitreihe + Analyse
+    plus ein Ranking nach aktuellem Interesse.
+    """
+    return gtrends.compare(
+        keywords, geo=geo, timeframe=timeframe, category=category,
+        gprop=gprop, include_series=include_series,
     )
 
 
 @mcp.tool()
 def gt_interest_by_region(
-    topic: str, geo: str = "DE", timeframe: str = "today 12-m", category: int = 0, gprop: str = "web"
+    topic: str,
+    geo: str = "DE",
+    timeframe: str = "today 12-m",
+    category: int = 0,
+    gprop: str = "web",
+    limit: int = 25,
 ) -> dict:
-    """Regionale Verteilung des Interesses fuer ein Thema (Ausreisser-Regionen)."""
-    return gtrends.interest_by_region(topic, geo=geo, timeframe=timeframe, category=category, gprop=gprop)
+    """Regionale Verteilung des Interesses fuer ein Thema (Ausreisser-Regionen).
+
+    Absteigend nach Interesse sortiert, Null-Regionen entfernt, auf 'limit'
+    gekuerzt.
+    """
+    return gtrends.interest_by_region(
+        topic, geo=geo, timeframe=timeframe, category=category, gprop=gprop, limit=limit
+    )
 
 
 @mcp.tool()
-def gt_categories(find: str | None = None, language: str = "de") -> dict:
+def gt_categories(find: str | None = None, language: str = "de", limit: int = 100) -> dict:
     """SUCHE 2 (Schritt 1): Kategorie-Baum von Google Trends durchsuchen.
 
-    Liefert ~1133 Eintraege - Haupt- UND Unterkategorien (z. B. 'Home & Garden'=11
-    und die Unterkategorien 'Home Appliances'=271, 'Home Furnishings'=270). Jede
-    'id' - auch die einer Unterkategorie - ist direkt als 'category' in
-    gt_topic_across_properties und gt_discover_category verwendbar. Mit 'find'
-    nach Namen filtern (z. B. 'Home', 'Auto', 'Garten')."""
-    return gtrends.categories(find=find, language=language)
+    Der Baum hat ~1133 Eintraege - Haupt- UND Unterkategorien (z. B.
+    'Home & Garden'=11 und die Unterkategorien 'Home Appliances'=271,
+    'Home Furnishings'=270). Jede 'id' - auch die einer Unterkategorie - ist
+    direkt als 'category' in gt_topic_across_properties und
+    gt_discover_category verwendbar. Mit 'find' nach Namen filtern (z. B.
+    'Home', 'Auto', 'Garten') - ohne 'find' wird auf 'limit' gekuerzt.
+    Der Baum wird pro Sprache gecacht (wiederholte Aufrufe sind gratis)."""
+    return gtrends.categories(find=find, language=language, limit=limit)
 
 
 @mcp.tool()

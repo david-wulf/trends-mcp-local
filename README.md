@@ -16,11 +16,18 @@ TikTok/Instagram/Facebook sind bewusst **nicht** enthalten (kein seriöser Grati
 
 ### Suche 1 — Thema über die verschiedenen Suchen hinweg
 1. `gt_resolve_topic("Saugroboter")` → liefert die Themen-ID (`mid`, z. B. `/m/0bwlch6`).
-2. `gt_topic_across_properties("/m/0bwlch6", geo="DE")` → misst das Thema parallel in
-   **Web-, YouTube-, News-, Bilder- und Shopping-Suche** und gibt je Property die
+2. `gt_topic_across_properties("/m/0bwlch6", geo="DE")` → misst das Thema in
+   **Web- und News-Suche** (Default, Discover-relevant) und gibt je Property die
    0-100-Prozentkurve **plus Ausreißer/Spikes** (Peak, aktueller Wert, Z-Wert) zurück.
+   Volle Liste per `properties=["web","youtube","news","images","shopping"]`;
+   `include_series=False` liefert nur die kompakte Analyse (für Massen-Screenings).
 
 Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrdeutigen String.
+
+### Themen-Kandidaten priorisieren
+- `gt_compare(["Balkonkraftwerk", "Wärmepumpe", "Saugroboter"])` → bis zu 5 Keywords
+  in **einem** Request, gemeinsam normierte 0-100-Skala + Ranking nach aktuellem
+  Interesse. Ideal um zu entscheiden, welcher Artikel-Kandidat zuerst dran ist.
 
 ### Suche 2 — Klassisches Entdecken (Kategorien/Unterkategorien)
 - `gt_categories(find="Home")` → Kategorie-Baum mit IDs (Kategorien + Unterkategorien).
@@ -48,8 +55,8 @@ Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrd
 
 ## Alle Tools
 
-**Google Trends:** `gt_resolve_topic`, `gt_topic_across_properties`, `gt_interest_by_region`,
-`gt_categories`, `gt_discover_category`, `gt_trending_now`
+**Google Trends:** `gt_resolve_topic`, `gt_topic_across_properties`, `gt_compare`,
+`gt_interest_by_region`, `gt_categories`, `gt_discover_category`, `gt_trending_now`
 **Google News:** `news_search` (Content-Ideen zu einem Thema), `news_headlines` (Top/Ressort)
 **YouTube:** `yt_search`, `yt_trending`, `yt_video_stats`, `yt_categories`
 **Reddit:** `reddit_search`, `reddit_rising`, `reddit_hot`, `reddit_top`, `reddit_find_subreddits`

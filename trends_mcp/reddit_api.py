@@ -6,12 +6,46 @@ Registrierung: https://www.reddit.com/prefs/apps  (Typ: 'script').
 """
 from __future__ import annotations
 
+import functools
 import os
 from typing import Any
 
 import praw
+import prawcore
 
 _reddit = None
+
+
+class RedditApiError(RuntimeError):
+    """Klar lesbarer Fehler statt eines rohen PRAW/prawcore-Tracebacks."""
+
+
+def _friendly_errors(fn):
+    """Uebersetzt gaengige prawcore-Fehler (404/403/401/Redirect) in Klartext."""
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except (prawcore.exceptions.NotFound, prawcore.exceptions.Redirect) as e:
+            raise RedditApiError(
+                "Subreddit nicht gefunden - Schreibweise pruefen (z. B. 'smarthome' statt URL/Anzeigename)."
+            ) from e
+        except prawcore.exceptions.Forbidden as e:
+            raise RedditApiError("Zugriff verweigert (privates/quarantiniertes Subreddit).") from e
+        except prawcore.exceptions.ResponseException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status == 401:
+                raise RedditApiError(
+                    "Reddit-Authentifizierung fehlgeschlagen - REDDIT_CLIENT_ID/SECRET in der .env pruefen."
+                ) from e
+            if status == 429:
+                raise RedditApiError("Reddit-Rate-Limit erreicht (100 QPM) - kurz warten und erneut versuchen.") from e
+            raise RedditApiError(f"Reddit-API-Fehler (HTTP {status}).") from e
+        except prawcore.exceptions.RequestException as e:
+            raise RedditApiError(f"Reddit nicht erreichbar (Netzwerkfehler: {e}).") from e
+
+    return wrapper
 
 
 def _client():
@@ -51,6 +85,7 @@ def _post(p) -> dict[str, Any]:
     }
 
 
+@_friendly_errors
 def search(
     query: str,
     subreddit: str = "all",
@@ -71,18 +106,21 @@ def search(
     return {"query": query, "subreddit": subreddit, "sort": sort, "count": len(posts), "posts": posts}
 
 
+@_friendly_errors
 def rising(subreddit: str, limit: int = 25) -> dict[str, Any]:
     """Aufsteigende Beitraege eines Subreddits (frueher Trend-Indikator)."""
     posts = [_post(p) for p in _client().subreddit(subreddit).rising(limit=min(max(limit, 1), 100))]
     return {"subreddit": subreddit, "listing": "rising", "count": len(posts), "posts": posts}
 
 
+@_friendly_errors
 def hot(subreddit: str, limit: int = 25) -> dict[str, Any]:
     """Aktuell heisse Beitraege eines Subreddits."""
     posts = [_post(p) for p in _client().subreddit(subreddit).hot(limit=min(max(limit, 1), 100))]
     return {"subreddit": subreddit, "listing": "hot", "count": len(posts), "posts": posts}
 
 
+@_friendly_errors
 def top(subreddit: str, time_filter: str = "week", limit: int = 25) -> dict[str, Any]:
     """Top-Beitraege eines Subreddits im Zeitfenster."""
     posts = [
@@ -92,6 +130,7 @@ def top(subreddit: str, time_filter: str = "week", limit: int = 25) -> dict[str,
     return {"subreddit": subreddit, "listing": f"top/{time_filter}", "count": len(posts), "posts": posts}
 
 
+@_friendly_errors
 def find_subreddits(query: str, limit: int = 15) -> dict[str, Any]:
     """Passende Subreddits zu einem Thema finden (fuer gezielte Recherche)."""
     subs = []

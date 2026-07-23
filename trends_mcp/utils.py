@@ -1,15 +1,25 @@
 """Hilfsfunktionen: Zeitreihen-Aufbereitung und Ausreißer-Erkennung."""
 from __future__ import annotations
 
+import math
 import statistics
 from typing import Any
+
+
+def _index_has_time(df) -> bool:
+    """True, wenn der Zeit-Index Uhrzeiten traegt (stuendliche Timeframes wie 'now 7-d')."""
+    try:
+        return any(getattr(idx, "hour", 0) or getattr(idx, "minute", 0) for idx in df.index)
+    except Exception:
+        return False
 
 
 def series_from_df(df, keyword: str | None = None) -> list[dict[str, Any]]:
     """Wandelt einen trendspy interest_over_time-DataFrame in eine Liste um.
 
     Erwartet einen DataFrame mit Zeit-Index und einer Wertspalte
-    (Keyword/Topic-mid) plus optional 'isPartial'.
+    (Keyword/Topic-mid) plus optional 'isPartial'. Bei stuendlichen Daten
+    ('now 7-d' etc.) bleibt die Uhrzeit erhalten, damit Spikes eindeutig sind.
     """
     if df is None or getattr(df, "empty", True):
         return []
@@ -18,10 +28,11 @@ def series_from_df(df, keyword: str | None = None) -> list[dict[str, Any]]:
     if col is None:
         return []
     partial_col = "isPartial" if "isPartial" in df.columns else None
+    fmt = "%Y-%m-%d %H:%M" if _index_has_time(df) else "%Y-%m-%d"
     out: list[dict[str, Any]] = []
     for idx, row in df.iterrows():
         try:
-            date = idx.strftime("%Y-%m-%d")
+            date = idx.strftime(fmt)
         except Exception:
             date = str(idx)
         raw = row[col]
@@ -83,9 +94,31 @@ def detect_outliers(series: list[dict[str, Any]], z_threshold: float = 2.0) -> d
     }
 
 
+def _to_native(value: Any) -> Any:
+    """numpy-Skalare -> native Python-Typen, NaN -> None (JSON-sicher)."""
+    if value is None:
+        return None
+    # numpy-Typen haben .item(); NaN vorher abfangen
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    item = getattr(value, "item", None)
+    if callable(item) and not isinstance(value, (str, bytes, dict, list)):
+        try:
+            value = value.item()
+        except Exception:
+            return str(value)
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return value
+
+
 def df_records(df, limit: int | None = None) -> list[dict[str, Any]]:
-    """DataFrame -> Liste von dicts (für related_queries/topics etc.)."""
+    """DataFrame -> Liste von dicts (für related_queries/topics etc.).
+
+    Werte werden in native Python-Typen konvertiert (numpy int64/float64 und
+    NaN sind nicht JSON-serialisierbar).
+    """
     if df is None or getattr(df, "empty", True):
         return []
-    recs = df.to_dict(orient="records")
+    recs = [{k: _to_native(v) for k, v in r.items()} for r in df.to_dict(orient="records")]
     return recs[:limit] if limit else recs
