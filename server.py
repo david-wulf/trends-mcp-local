@@ -44,11 +44,11 @@ _load_env()
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from trends_mcp import gtrends, news, reddit_api, youtube
 
-mcp = FastMCP("trends-local")
+mcp = MCPServer("trends-local")
 
 # ===========================================================================
 # GOOGLE TRENDS  (kein API-Key noetig; inoffizielle Endpunkte via trendspy)

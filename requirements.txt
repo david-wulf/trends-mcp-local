@@ -1,4 +1,4 @@
-mcp[cli]>=1.28
+mcp[cli]>=2,<3
 trendspy>=0.1.6
 google-api-python-client>=2.190
 praw>=8.0
