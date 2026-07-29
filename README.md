@@ -101,6 +101,21 @@ python -m venv .venv
 claude mcp add trends-local --scope user -- "<pfad>\.venv\Scripts\python.exe" "<pfad>\server.py"
 ```
 
+### Update einer bestehenden Installation
+Seit 29.07.2026 läuft der Server auf **MCP-SDK 2.x** (Spec-Revision `2026-07-28`).
+Das ist ein **gekoppelter** Wechsel: `mcp 2.0` hat `FastMCP` in `MCPServer`
+umbenannt und `mcp.server.fastmcp` entfernt. Der neue Code startet mit dem alten
+SDK nicht (`ModuleNotFoundError: No module named 'mcp.server.mcpserver'`).
+
+Also immer **beides zusammen**:
+
+```bash
+git pull
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Danach Claude Code neu starten. An der Registrierung ändert sich nichts.
+
 ---
 
 ## Grenzen (ehrlich)
