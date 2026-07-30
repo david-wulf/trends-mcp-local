@@ -60,6 +60,42 @@ Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrd
 **Google News:** `news_search` (Content-Ideen zu einem Thema), `news_headlines` (Top/Ressort)
 **YouTube:** `yt_search`, `yt_trending`, `yt_video_stats`, `yt_categories`
 **Reddit:** `reddit_search`, `reddit_rising`, `reddit_hot`, `reddit_top`, `reddit_find_subreddits`
+— **bewusst nicht in Betrieb**, siehe [Reddit: bewusst deaktiviert](#reddit-bewusst-deaktiviert).
+
+---
+
+## Reddit: bewusst deaktiviert
+
+**Entscheidung (29.07.2026): Wir richten Reddit nicht ein.** Die fünf `reddit_*`-Tools
+bleiben im Code, laufen aber mangels Credentials nicht — das ist **kein
+Konfigurationsfehler und soll nicht "repariert" werden.**
+
+**Grund:** Reddits [Responsible Builder Policy](https://support.reddithelp.com/hc/en-us/articles/42728983564564-Responsible-Builder-Policy)
+trennt zwischen nicht-kommerzieller Nutzung (freie Script-App) und kommerzieller
+Nutzung, die eine **ausdrückliche schriftliche Freigabe** von Reddit verlangt:
+
+> „If you'd like to use Reddit data for commercial purposes, you'll need to get
+> explicit written approval."
+
+Themenrecherche für homeandsmart.de ist kommerzielle Nutzung — der Zweck ist Content,
+der Umsatz bringt. Ohne Freigabe wäre der Betrieb formal ein Policy-Verstoß, und der
+Aufwand einer Anfrage steht in keinem Verhältnis zum Nutzen: Reddit war hier ohnehin
+nur Beiwerk, die Recherche trägt sich über Google Trends, News und YouTube.
+
+Zur Einordnung, falls die Frage wieder aufkommt:
+
+- Die App-Verbote der Policy (Vote-Manipulation, Spam, automatisierte DMs) wären
+  strukturell gar nicht verletzbar — der Server ist auf `read_only = True` festgenagelt
+  und hat kein einziges Schreib-Tool. Daran liegt es also nicht.
+- Das Verbot betrifft **Training** von KI-Modellen mit Reddit-Daten. Inhalte in einen
+  Chat-Kontext zu laden ist kein Training — dieser Punkt war nicht der Blocker.
+- Der Blocker ist allein die fehlende kommerzielle Freigabe.
+
+**Wenn sich das ändern soll:** über den Kontaktweg in der Policy die kommerzielle
+Freigabe einholen, *danach* eine Script-App unter
+https://www.reddit.com/prefs/apps anlegen und `REDDIT_CLIENT_ID` /
+`REDDIT_CLIENT_SECRET` / `REDDIT_USER_AGENT` in der `.env` setzen. Codeseitig ist
+nichts zu tun.
 
 ---
 
@@ -68,9 +104,9 @@ Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrd
 Die virtuelle Umgebung (`.venv`) mit allen Abhängigkeiten ist bereits angelegt, und der
 Server ist in Claude Code user-weit als **`trends-local`** registriert.
 
-### Keys hinterlegen (nur für YouTube + Reddit)
-Google Trends funktioniert sofort. Für YouTube/Reddit `.env.example` nach `.env` kopieren
-und ausfüllen:
+### Keys hinterlegen (nur für YouTube)
+Google Trends und Google News funktionieren sofort ohne Key. Für YouTube
+`.env.example` nach `.env` kopieren und ausfüllen:
 
 ```bash
 cp .env.example .env
@@ -78,8 +114,8 @@ cp .env.example .env
 
 - **YOUTUBE_API_KEY** — [Google Cloud Console](https://console.cloud.google.com/) → Projekt
   anlegen → „YouTube Data API v3" aktivieren → Anmeldedaten → API-Schlüssel.
-- **REDDIT_CLIENT_ID / _SECRET** — https://www.reddit.com/prefs/apps → „create app" →
-  Typ **script**. `client_id` steht unter dem App-Namen, `secret` im Secret-Feld.
+
+Die Reddit-Variablen bleiben leer — siehe [Reddit: bewusst deaktiviert](#reddit-bewusst-deaktiviert).
 
 Nach dem Ausfüllen Claude Code neu starten (Server liest die `.env` beim Start).
 
