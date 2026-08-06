@@ -46,7 +46,7 @@ if _HERE not in sys.path:
 
 from mcp.server.mcpserver import MCPServer
 
-from trends_mcp import gtrends, news, reddit_api, youtube
+from trends_mcp import cache, gtrends, news, reddit_api, youtube
 
 mcp = MCPServer("trends-local")
 
@@ -141,9 +141,18 @@ def gt_categories(find: str | None = None, language: str = "de", limit: int = 10
     'Home & Garden'=11 und die Unterkategorien 'Home Appliances'=271,
     'Home Furnishings'=270). Jede 'id' - auch die einer Unterkategorie - ist
     direkt als 'category' in gt_topic_across_properties und
-    gt_discover_category verwendbar. Mit 'find' nach Namen filtern (z. B.
-    'Home', 'Auto', 'Garten') - ohne 'find' wird auf 'limit' gekuerzt.
-    Der Baum wird pro Sprache gecacht (wiederholte Aufrufe sind gratis)."""
+    gt_discover_category verwendbar.
+
+    WICHTIG zu 'find': Die Kategorienamen stehen in der gewaehlten 'language'
+    (bei language='de' also 'Erneuerbare und alternative Energien', nicht
+    'Renewable & Alternative Energy'). Damit eine englische Suche trotzdem
+    trifft, matcht 'find' gegen BEIDE Baeume - find='Energy' und find='Energie'
+    liefern dieselben ids (233, 954, 657). Die ids sind sprachunabhaengig.
+    Jeder Treffer enthaelt 'name' (Zielsprache) und 'name_en'.
+
+    Bei 0 Treffern also nicht auf category=0 zurueckfallen, sondern ein
+    kuerzeres Stichwort probieren ('Solar' statt 'Solaranlage').
+    Der Baum ist 30 Tage gecacht (wiederholte Aufrufe sind gratis)."""
     return gtrends.categories(find=find, language=language, limit=limit)
 
 
@@ -154,16 +163,28 @@ def gt_discover_category(
     timeframe: str = "today 3-m",
     seed: str = "",
     language: str = "de",
+    gprop: str = "web",
 ) -> dict:
     """SUCHE 2: Klassisches Entdecken innerhalb einer (Unter-)Kategorie.
 
     seed='' = reine Kategorie-Entdeckung (wie 'nur Kategorie gewaehlt' in der
     Google-Trends-Oberflaeche). Optional Seed-Keyword setzen, um innerhalb der
     Kategorie zu fokussieren. Liefert aufsteigende (rising) und Top-Themen sowie
-    -Suchanfragen. Hinweis: Diese Endpunkte haben ein striktes Google-Kontingent
-    - bei Fehlermeldung 1-2 Minuten warten.
+    -Suchanfragen.
+
+    gprop waehlt die Art der Suche: 'web' (Default), 'youtube', 'news',
+    'images', 'shopping'. Damit gibt es auch fuer Shopping und YouTube echte
+    Queries statt nur Interessekurven. Ein unbekannter Wert wird abgewiesen und
+    faellt NICHT still auf 'web' zurueck.
+
+    Hinweis: Diese Endpunkte haben ein striktes Google-Kontingent. Ergebnisse
+    werden 6 Stunden gecacht; bei erschoepftem Kontingent kommt automatisch der
+    letzte bekannte Stand mit 'cache': {'stale': true, 'age_min': ...} zurueck,
+    statt dass der Aufruf scheitert.
     """
-    return gtrends.discover_category(category, geo=geo, timeframe=timeframe, seed=seed, language=language)
+    return gtrends.discover_category(
+        category, geo=geo, timeframe=timeframe, seed=seed, language=language, gprop=gprop
+    )
 
 
 @mcp.tool()
@@ -172,10 +193,31 @@ def gt_trending_now(
 ) -> dict:
     """SUCHE 2: Aktuell trendende Suchen mit Volumen und Wachstum in Prozent.
 
-    Robuster Einstieg ins 'Trends entdecken'. Optional per 'category' (Name,
-    z. B. 'Sport', 'Technology', 'Shopping', 'Entertainment') filtern.
+    Robuster Einstieg ins 'Trends entdecken'. Optional per 'category' (Name)
+    filtern - Google liefert diese Namen in der Regel englisch aus, auch bei
+    language='de' ('Sports', 'Politics', 'Entertainment', 'Other'). Bei 0
+    Treffern listet der 'hinweis' die tatsaechlich vorhandenen Namen auf.
+    'hours_since_started' ist das Alter des Trends in Stunden.
+    30 Minuten gecacht.
     """
     return gtrends.trending_now(geo=geo, language=language, hours=hours, category=category, limit=limit)
+
+
+@mcp.tool()
+def gt_cache(action: str = "stats", namespace: str | None = None) -> dict:
+    """Wartung des Google-Trends-Caches (SQLite, ueberlebt Neustarts).
+
+    action='stats' zeigt Eintraege, TTL und Alter pro Namespace.
+    action='clear' leert alles oder - mit 'namespace' - nur einen Bereich
+    ('suggestions', 'categories', 'iot', 'compare', 'ibr', 'related_queries',
+    'related_topics', 'trending_now'), um frische Daten zu erzwingen.
+    """
+    act = (action or "stats").strip().lower()
+    if act == "stats":
+        return cache.stats()
+    if act == "clear":
+        return cache.clear(namespace)
+    return {"error": f"unbekannte action '{action}'. Gueltig: stats, clear"}
 
 
 # ===========================================================================

@@ -31,14 +31,72 @@ Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrd
 
 ### Suche 2 — Klassisches Entdecken (Kategorien/Unterkategorien)
 - `gt_categories(find="Home")` → Kategorie-Baum mit IDs (Kategorien + Unterkategorien).
-- `gt_discover_category(category=11, seed="")` → rising/top Themen & Suchanfragen einer
-  (Unter-)Kategorie. `seed=""` = reine Kategorie-Entdeckung wie in der Oberfläche.
-- `gt_trending_now(geo="DE", category="Shopping")` → aktuell trendende Suchen mit
+- `gt_discover_category(category=11, seed="", gprop="web")` → rising/top Themen &
+  Suchanfragen einer (Unter-)Kategorie. `seed=""` = reine Kategorie-Entdeckung wie in
+  der Oberfläche. `gprop` wählt die Art der Suche (`web`, `youtube`, `news`, `images`,
+  `shopping`) — damit gibt es auch für Shopping und YouTube **echte Queries** statt nur
+  Interessekurven.
+- `gt_trending_now(geo="DE", category="Sports")` → aktuell trendende Suchen mit
   Volumen und Wachstum in %, optional nach Kategorie gefiltert (robustester Einstieg).
 
 > ⚠️ `gt_discover_category` nutzt Googles `related_queries/related_topics` — die haben ein
-> **striktes Kontingent**. Bei Quota-Meldung 1–2 Minuten warten. `gt_trending_now`,
-> `gt_topic_across_properties`, `gt_categories` sind robust.
+> **striktes Kontingent**. Der Cache fängt das ab (siehe unten): bei erschöpftem Kontingent
+> kommt der letzte bekannte Stand als `stale` zurück, statt dass der Aufruf scheitert.
+
+### `find` sucht in beiden Sprachen
+Die Kategorienamen kommen in der gewählten `language` — bei `language="de"` heißt die
+Kategorie `Erneuerbare und alternative Energien`, nicht `Renewable & Alternative Energy`.
+Die Trends-Topics selbst liefert Google dagegen **englisch** aus („Home energy storage",
+„Power inverter"), also sucht man ganz natürlich englisch und fand früher nichts —
+und landete fälschlich bei `category=0`.
+
+Deshalb matcht `find` gegen **beide** Bäume. `find="Energy"` und `find="Energie"` liefern
+dieselben drei IDs (233, 954, 657); die IDs sind sprachunabhängig. Jeder Treffer trägt
+`name` (Zielsprache), `name_en` und `matched_via`.
+
+Randnotiz: die Kategorienamen in `gt_trending_now` kommen von Google auch bei
+`language="de"` englisch zurück (`Sports`, `Politics`, `Other`). Bei 0 Treffern listet der
+`hinweis` die tatsächlich vorhandenen Namen auf.
+
+---
+
+## Cache & Kontingent
+
+Alle Google-Trends-Antworten liegen in einer SQLite-DB (`.cache/trends.sqlite`, per
+`TRENDS_MCP_CACHE` verlegbar, nicht im Git). Sie überlebt Neustarts — die früheren
+In-Memory-Caches waren nach jedem Serverstart wieder leer.
+
+| Namespace | TTL | Inhalt |
+|---|---|---|
+| `suggestions` | 30 Tage | `gt_resolve_topic` (Themen-mids sind statisch) |
+| `categories` | 30 Tage | Kategorie-Baum je Sprache |
+| `iot` | 6 Std | `gt_topic_across_properties`, **pro Property einzeln** |
+| `compare` | 6 Std | `gt_compare` |
+| `ibr` | 6 Std | `gt_interest_by_region` |
+| `related_queries` / `related_topics` | 6 Std | `gt_discover_category`, getrennt gecacht |
+| `trending_now` | 30 Min | `gt_trending_now` |
+
+**Bei erschöpftem Kontingent** greift der Cache als Fallback, statt den Aufruf scheitern
+zu lassen:
+
+1. Frischer Eintrag da → sofort zurück, gar kein Request.
+2. Nur ein **abgelaufener** Eintrag da → der kommt zurück, markiert als
+   `"cache": {"stale": true, "age_min": 412, ...}` samt Warnhinweis. **Null Sekunden
+   Wartezeit** — das ist der eigentliche Zeitgewinn.
+3. Nichts im Cache → einmal 30 s warten und genau einmal wiederholen, dann klare
+   Fehlermeldung. Kurze Backoffs (2/4/8 s) helfen bei Googles Kontingent nicht, das
+   erholt sich eher im Minutenbereich. Netzfehler (Timeout/Connection) bekommen davon
+   unabhängig drei Versuche mit 2/4 s.
+
+Pro Aufruf wird höchstens **einmal** 30 s gewartet — danach laufen die restlichen
+Teilabfragen nur noch gegen den Cache.
+
+Jede Antwort trägt einen `cache`-Block mit `hit`, `stale`, `age_min` und Zeitstempel,
+damit nie unklar ist, wie alt die Zahlen sind. Teilergebnisse mit Fehlern werden
+**nicht** gespeichert — sonst würde ein einzelner Quota-Fehler stundenlang einfrieren.
+
+`gt_cache(action="stats")` zeigt die Belegung, `gt_cache(action="clear", namespace="...")`
+erzwingt frische Daten.
 
 ---
 
@@ -56,7 +114,8 @@ Immer über die Themen-`mid` reingehen → misst die Entität, nicht einen mehrd
 ## Alle Tools
 
 **Google Trends:** `gt_resolve_topic`, `gt_topic_across_properties`, `gt_compare`,
-`gt_interest_by_region`, `gt_categories`, `gt_discover_category`, `gt_trending_now`
+`gt_interest_by_region`, `gt_categories`, `gt_discover_category`, `gt_trending_now`,
+`gt_cache` (Cache-Wartung: `stats` / `clear`)
 **Google News:** `news_search` (Content-Ideen zu einem Thema), `news_headlines` (Top/Ressort)
 **YouTube:** `yt_search`, `yt_trending`, `yt_video_stats`, `yt_categories`
 **Reddit:** `reddit_search`, `reddit_rising`, `reddit_hot`, `reddit_top`, `reddit_find_subreddits`
@@ -157,5 +216,8 @@ Danach Claude Code neu starten. An der Registrierung ändert sich nichts.
 ## Grenzen (ehrlich)
 - Google Trends liefert **relative** 0-100-Werte, kein absolutes Suchvolumen (dafür Ahrefs).
 - `trendspy` nutzt inoffizielle Endpunkte — kann bei Google-Änderungen mal brechen (Update abwarten).
-- `related_queries/related_topics` sind kontingentiert (siehe oben).
+- `related_queries/related_topics` sind kontingentiert. Der Cache mildert das, hebt es aber
+  nicht auf: beim allerersten Aufruf einer Kombination gibt es nichts zurückzufallen.
+- Ein `stale`-Ergebnis ist per Definition nicht tagesaktuell — bei `gt_trending_now` ist das
+  relevant, bei Rising Queries über drei Monate praktisch nie.
 - YouTube `search.list` kostet 100 Quota-Einheiten → ~100 Suchen/Tag im Gratis-Rahmen.
